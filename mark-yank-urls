@@ -64,6 +64,13 @@ sub on_button_release {
 }
 
 
+my %keymap = (
+    Escape  => 'cancel',
+    Return  => 'open',
+    y       => 'yank',
+    n       => 'next',
+    p       => 'prev',
+);
 my $mark_mode_active = 0;
 my %mod = ( 'control' => 0, 'shift' => 0 );
 my $url_selected = -1;
@@ -184,14 +191,16 @@ sub on_key_press {
 sub on_key_release {
     my ($term, $event, $keysym, $octets) = @_;
 
-    if ($mark_mode_active) {
-        my $ch = chr($keysym);
 
-        if ($keysym == 65307) {                     # <esc>
+    if ($mark_mode_active) {
+        my $keystr = $term->XKeysymToString($keysym);
+        my $evt = $keymap{$keystr} || 0;
+
+        if ($evt eq 'cancel') {
             deactivate_mark_mode ($term);
             return 1;
 
-        } elsif ($keysym == 65293) {                # <enter>
+        } elsif ($evt eq 'open') {
             my $url = get_active_url($term);
             $term->exec_async($term->{browser}, $url);
             set_visited($url);
@@ -206,12 +215,11 @@ sub on_key_release {
             $mod{shift} = 0;
             return 1;
 
-        } elsif ($mod{control} && (($ch eq 'n') || ($ch eq 'p'))) {
-                                                    # ^n and ^p to cycle list
-            my $dir = ($ch eq 'n') ? 1 : -1;
+        } elsif ($mod{control} && ($evt eq 'next' || $evt eq 'prev')) {
+            my $dir = ($evt eq 'next') ? 1 : -1;
             move_highlight ($term, $dir);
 
-        } elsif ($ch eq 'y') {                      # y
+        } elsif ($evt eq 'yank') {
             my $url = get_active_url($term);
             set_visited($url);
             do_copy ($term);

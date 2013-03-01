@@ -272,7 +272,7 @@ sub on_key_release {
 
         } elsif (!$mod{alt}) {
             my $i = index($shortcuts, $keystr);
-            if ($i != -1 && $i < $#urldb) {
+            if ($i != -1 && $i <= $#urldb) {
                 pick_selection($term, $i);
             }
         }

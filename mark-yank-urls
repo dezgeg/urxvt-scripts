@@ -6,6 +6,9 @@
 use strict;
 use warnings;
 
+use DBI;
+use Data::Dumper;
+
 my $url_matcher = qr{(
         (?:https?://|ftp://|news://|mailto:|file://|www\.)[ab-zA-Z0-9\-\@;\/?:&=%\$_.+!*\x27(),~#]+
         [ab-zA-Z0-9\-\@;\/?&=%\$_+!*\x27()~]   # exclude some trailing characters (heuristic)
@@ -29,35 +32,6 @@ sub on_start {
 	}
 
     $term->{browser} = $term->x_resource ("urlLauncher") || "x-www-browser";
-
-    ()
-}
-
-sub on_line_update {
-    my ($term, $row) = @_;
-
-    # Fetch the line that has changed.
-    my $line = $term->line($row);
-    my $text = $line->t;
-
-    # Find and underline URLs.
-    while ($text =~ /($url_matcher)/g) {
-        my $url = $1;
-        my $rend = $line->r;
-
-        # Mark all characters as underlined. we _must_ not toggle underline, as
-        # we might get called on an already-marked URL.
-        my $underlineURLs = $term->x_resource ('underlineURLs') || 'false';
-        if($underlineURLs eq 'true') {
-			my ($first, $last) = ($-[1], $+[1] - 1);
-
-			--$last if $url =~ s/["']$//;
-
-            $_ |= urxvt::RS_Uline for @{$rend}[$first .. $last];
-
-            $line->r($rend);
-        }
-    }
 
     ()
 }
@@ -94,7 +68,55 @@ my $mark_mode_active = 0;
 my %mod = ( 'control' => 0, 'shift' => 0 );
 my $url_selected = -1;
 my @url_db = ();
+my $dbh = DBI->connect("dbi:SQLite:dbname=$ENV{HOME}/.urxvt/urls.sqlite", { RaiseError => 1 }) or die "Can't open URL database";
+my $insert_url_query = $dbh->prepare('INSERT INTO urls VALUES (?);') or die "Can't prepare insert query";
+my $is_visited_url_query = $dbh->prepare('SELECT COUNT(*) FROM urls WHERE url = ?;') or die "Can't prepare select query";
 
+sub set_visited {
+    my ($url) = @_;
+    $insert_url_query->execute($url) unless is_visited($url);
+}
+
+sub is_visited {
+    my ($url) = @_;
+    $is_visited_url_query->execute($url);
+    my @result = $is_visited_url_query->fetchrow_array();
+    return $result[0];
+}
+
+sub on_line_update {
+    my ($term, $row) = @_;
+
+    # Fetch the line that has changed.
+    my $line = $term->line($row);
+    my $text = $line->t;
+
+    # Find and underline URLs.
+    while ($text =~ /($url_matcher)/g) {
+        my $url = $1;
+        my $rend = $line->r;
+
+        # Mark all characters as underlined. we _must_ not toggle underline, as
+        # we might get called on an already-marked URL.
+        my $underlineURLs = $term->x_resource ('underlineURLs') || 'false';
+        if($underlineURLs eq 'true') {
+			my ($first, $last) = ($-[1], $+[1] - 1);
+
+			--$last if $url =~ s/["']$//;
+
+            for (@{$rend}[$first .. $last]) {
+                $_ |= urxvt::RS_Uline;
+                if (is_visited($url)) {
+                    $_ = urxvt::SET_BGCOLOR($_, 6);
+                }
+            }
+
+            $line->r($rend);
+        }
+    }
+
+    ()
+}
 
 sub do_scan_for_urls {
     my ($term) = @_;
@@ -172,6 +194,7 @@ sub on_key_release {
         } elsif ($keysym == 65293) {                # <enter>
             my $url = get_active_url($term);
             $term->exec_async($term->{browser}, $url);
+            set_visited($url);
             deactivate_mark_mode ($term);
             return 1;
 
@@ -189,6 +212,8 @@ sub on_key_release {
             move_highlight ($term, $dir);
 
         } elsif ($ch eq 'y') {                      # y
+            my $url = get_active_url($term);
+            set_visited($url);
             do_copy ($term);
             deactivate_mark_mode ($term);
             return 1;
@@ -255,8 +280,12 @@ sub do_highlight {
     my $rend = $line->r;
 
     if ($enable) {
-        $_ |= urxvt::RS_RVid
-        for @{$rend}[ $h{col_from} .. $h{col_to}];
+        for (@{$rend}[ $h{col_from} .. $h{col_to}]) {
+            $_ |= urxvt::RS_RVid;
+            if (is_visited($h{url})) {
+                $_ = urxvt::SET_BGCOLOR($_, 6);
+            }
+        }
 
         # make it visible
         $term->view_start ( $row < 0 ? $row : 0 );

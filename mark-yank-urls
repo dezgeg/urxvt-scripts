@@ -14,6 +14,74 @@ my $url_matcher = qr{(
         [ab-zA-Z0-9\-\@;\/?&=%\$_+!*\x27()~]   # exclude some trailing characters (heuristic)
 )}x;
 
+my %keymap = (
+    Escape  => 'cancel',
+    Return  => 'open',
+    y       => 'yank',
+    n       => 'next',
+    p       => 'prev',
+);
+my $mark_mode_active = 0;
+my $url_selected = -1;
+my %mod = ( 'control' => 0, 'shift' => 0 );
+my $dbh = DBI->connect("dbi:SQLite:dbname=$ENV{HOME}/.urxvt/urls.sqlite", { RaiseError => 1 }) or die "Can't open URL database";
+my $insert_url_query = $dbh->prepare('INSERT INTO urls VALUES (?);') or die "Can't prepare insert query";
+my $is_visited_url_query = $dbh->prepare('SELECT COUNT(*) FROM urls WHERE url = ?;') or die "Can't prepare select query";
+my $overlay;
+my @urldb;
+
+sub move_selection {
+    my ($term, $dir) = @_;
+
+    set_selection($term, $url_selected, 0);
+    $url_selected = ($url_selected + $dir) % ($#urldb + 1);
+    set_selection($term, $url_selected, 1);
+
+    $term->want_refresh;
+}
+
+sub set_selection {
+    my ($term, $index, $enable) = @_;
+    my $url = $urldb[$index];
+
+    for (my $i = 0; $i < scalar @{$url->{rend}}; $i++) {
+        my $x = @{$url->{rend}}[$i];
+        $x &= ~urxvt::RS_RVid;
+        $x |= urxvt::RS_RVid if $enable;
+
+        $x = urxvt::SET_BGCOLOR($x, 6) if (is_visited($url->{url}));
+        @{$url->{rend}}[$i] = $x;
+    }
+    $overlay->set($url->{col}, $url->{row}, $url->{url}, $url->{rend});
+}
+
+sub setup_overlay {
+    my ($term) = @_;
+
+    $overlay = $term->overlay(0, 0, $term->ncol, $term->nrow, 0, 0);
+
+    for my $rowno (0 .. ($term->nrow - 1)) {
+        my $line = $term->ROW_t($rowno);
+        my $rend = $term->ROW_r($rowno);
+        $overlay->set(0, $rowno, $line, $rend);
+
+        while ($line =~ /($url_matcher)/g) {
+			my ($url, $first, $last) = ($1, $-[1], $+[1] - 1);
+			--$last if $url =~ s/["']$//;
+
+            my %tuple = (
+				row => $rowno,
+				col => $first,
+				last => $last,
+				url => $url,
+                rend => [ @$rend[$first .. $last] ],
+			);
+            push @urldb, \%tuple;
+        }
+
+    }
+    return scalar @urldb;
+}
 
 sub on_start {
     my ($term) = @_;
@@ -64,21 +132,6 @@ sub on_button_release {
 }
 
 
-my %keymap = (
-    Escape  => 'cancel',
-    Return  => 'open',
-    y       => 'yank',
-    n       => 'next',
-    p       => 'prev',
-);
-my $mark_mode_active = 0;
-my %mod = ( 'control' => 0, 'shift' => 0 );
-my $url_selected = -1;
-my @url_db = ();
-my $dbh = DBI->connect("dbi:SQLite:dbname=$ENV{HOME}/.urxvt/urls.sqlite", { RaiseError => 1 }) or die "Can't open URL database";
-my $insert_url_query = $dbh->prepare('INSERT INTO urls VALUES (?);') or die "Can't prepare insert query";
-my $is_visited_url_query = $dbh->prepare('SELECT COUNT(*) FROM urls WHERE url = ?;') or die "Can't prepare select query";
-my @buffered_text;
 
 sub set_visited {
     my ($url) = @_;
@@ -90,15 +143,6 @@ sub is_visited {
     $is_visited_url_query->execute($url);
     my @result = $is_visited_url_query->fetchrow_array();
     return $result[0];
-}
-
-sub on_add_lines {
-    my ($term, $text) = @_;
-
-    if ($mark_mode_active) {
-        push @buffered_text, $text;
-        return 1;
-    }
 }
 
 sub on_line_update {
@@ -133,43 +177,6 @@ sub on_line_update {
     }
 
     ()
-}
-
-sub do_scan_for_urls {
-    my ($term) = @_;
-
-    @url_db = ();
-
-    my $row_start = $term->top_row;
-    my $row_end = $term->nrow;
-
-	for my $row ($row_start .. $row_end) {
-
-        # Fetch the line that has changed.
-        my $line = $term->line ($row);
-        my $text = $line->t;
-
-        # Find all urls (if any).
-        while ($text =~ /($url_matcher)/g) {
-            my $rend = $line->r;
-
-			my ($url, $first, $last) = ($1, $-[1], $+[1] - 1);
-
-			--$last if $url =~ s/["']$//;
-
-            my %h = (
-				row => $row,
-				col_from => $first,
-				col_to => $last,
-				url => $url,
-			);
-				
-			push @url_db, \%h;
-        }
-    }
-
-    # 0 for none, positive count otherwise
-    return $#url_db + 1;
 }
 
 
@@ -227,8 +234,7 @@ sub on_key_release {
 
         } elsif ($mod{control} && ($evt eq 'next' || $evt eq 'prev')) {
             my $dir = ($evt eq 'next') ? 1 : -1;
-            move_highlight ($term, $dir);
-
+            move_selection($term, $dir);
         } elsif ($evt eq 'yank') {
             my $url = get_active_url($term);
             set_visited($url);
@@ -246,14 +252,8 @@ sub on_key_release {
 
 sub get_active_url {
     my ($term) = @_;
-    my $max = $#url_db + 1;
 
-    return if $url_selected < 0 || $url_selected >= $max;
-    return if not defined $url_db[$url_selected];
-    my $o = $url_db[$url_selected];
-    my %h = %$o;
-
-    return $h{url};
+    return $urldb[$url_selected]->{url};
 }
 
 sub do_copy {
@@ -269,84 +269,28 @@ sub do_copy {
     }
 }
 
-sub move_highlight {
-    my ($term, $dir) = @_;
-    my $max = $#url_db + 1;
-
-    do_highlight ($term, 0);
-    
-    $url_selected = ($max + $url_selected + $dir) % $max;
-        
-    do_highlight ($term, 1);
-
-    $term->want_refresh;
-}
-
-sub do_highlight {
-    my ($term, $enable) = @_;
-    my $max = $#url_db + 1;
-
-    return if $url_selected < 0 || $url_selected >= $max;
-    return if not defined $url_db[$url_selected];
-
-    my $o = $url_db[$url_selected];
-    my %h = %$o;
-
-    my $row = $h{row};
-    my $line = $term->line ($row);
-    my $text = $line->t;
-    my $rend = $line->r;
-
-    if ($enable) {
-        for (@{$rend}[ $h{col_from} .. $h{col_to}]) {
-            $_ |= urxvt::RS_RVid;
-            if (is_visited($h{url})) {
-                $_ = urxvt::SET_BGCOLOR($_, 6);
-            }
-        }
-
-        # make it visible
-        $term->view_start ( $row < 0 ? $row : 0 );
-
-    } else {
-        $_ &= ~urxvt::RS_RVid
-        for @{$rend}[ $h{col_from} .. $h{col_to}];
-    }
-
-    $line->r ($rend);
-}
-
 sub activate_mark_mode {
     my ($term) = @_;
 
     if ($mark_mode_active) {
+        move_selection($term, -1);
 
-        move_highlight ($term, -1);
-
-    } elsif ( do_scan_for_urls ($term) ) {
-
-        $term->{save_view_start} = $term->view_start;
-
-        move_highlight ($term, 0);
-
-        $mark_mode_active=1 if ($url_selected > -1);
+    } elsif (setup_overlay($term)) {
+        $overlay->show();
+        $url_selected = $#urldb;
+        set_selection($term, $url_selected, 1);
+        $mark_mode_active = 1;
+    } else {
+        $overlay->hide();
     }
 }
 
 sub deactivate_mark_mode {
     my ($term) = @_;
 
-    do_highlight ($term, 0);
-
-    $url_selected = -1;
     $mark_mode_active = 0;
-    # Buffer output
-    for (@buffered_text) {
-        $term->scr_add_lines($_);
-    }
-    @buffered_text = ();
-
-    $term->view_start ($term->{save_view_start});
+    @urldb = ();
+    $overlay->hide();
     $term->want_refresh;
 }
 

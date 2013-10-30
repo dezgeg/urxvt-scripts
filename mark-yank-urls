@@ -53,7 +53,13 @@ sub set_selection {
         $x = urxvt::SET_BGCOLOR($x, 6) if (is_visited($url->{url}));
         @{$url->{rend}}[$i] = $x;
     }
-    $overlay->set($url->{col}, $url->{row}, $url->{url}, $url->{rend});
+
+    # If the URL starts at column 0, the shortcut is placed over the first character of the URL.
+    if ($url->{col} == 0) {
+        $overlay->set(1, $url->{row}, substr($url->{url}, 1), $url->{rend});
+    } else {
+        $overlay->set($url->{col}, $url->{row}, $url->{url}, $url->{rend});
+    }
 }
 
 sub setup_overlay {
@@ -85,8 +91,15 @@ sub setup_overlay {
     my $i = 0;
     for (@urldb) {
         last if ($i >= length($shortcuts));
-        $overlay->set($_->{col} - 1, $_->{row}, substr($shortcuts, $i++, 1),
+
+        my $col = $_->{col} - 1;
+        # If the URL starts at column 0, the shortcut is placed over the first character of the URL.
+        $col = 0 if ($col <= 0);
+        my $shortcut = substr($shortcuts, $i, 1);
+
+        $overlay->set($col, $_->{row}, $shortcut,
                 [urxvt::SET_COLOR(0, 0, 3+8)]);
+        $i++;
     }
     return scalar @urldb;
 }

@@ -83,16 +83,16 @@ sub setup_overlay {
         $overlay->set(0, $rowno, $line, $rend);
 
         while ($line =~ /($url_matcher)/g) {
-			my ($url, $first, $last) = ($1, $-[1], $+[1] - 1);
-			--$last if $url =~ s/["')]$//;
+            my ($url, $first, $last) = ($1, $-[1], $+[1] - 1);
+            --$last if $url =~ s/["')]$//;
 
             my %tuple = (
-				row => $rowno,
-				col => $first,
-				last => $last,
-				url => $url,
+                row => $rowno,
+                col => $first,
+                last => $last,
+                url => $url,
                 rend => [ @$rend[$first .. $last] ],
-			);
+            );
             push @urldb, \%tuple;
         }
 
@@ -133,13 +133,13 @@ sub on_start {
         import Clipboard;
     }
 
-	eval { require Regexp::Common::URI };
-	if(!$@) {
-		require Regexp::Common;
-		Regexp::Common->import('URI');
+    eval { require Regexp::Common::URI };
+    if(!$@) {
+        require Regexp::Common;
+        Regexp::Common->import('URI');
 
-		$url_matcher = $Regexp::Common::RE{URI}{HTTP};
-	}
+        $url_matcher = $Regexp::Common::RE{URI}{HTTP};
+    }
 
     $term->{browser} = $term->x_resource ("urlLauncher") || "x-www-browser";
 
@@ -149,8 +149,8 @@ sub on_start {
 sub on_button_release {
     my ($term, $event) = @_;
 
-    my $mask = $term->ModLevel3Mask | $term->ModMetaMask
-    | urxvt::ShiftMask | urxvt::ControlMask;
+    my $mask = $term->ModLevel3Mask | $term->ModMetaMask |
+                urxvt::ShiftMask | urxvt::ControlMask;
 
     if ($event->{button} == 2 && ($event->{state} & $mask) == 0) {
         my $row = $event->{row};
@@ -163,7 +163,7 @@ sub on_button_release {
             my ($url, $first, $last) = ($1, $-[1], $+[1]);
 
             if($first <= $col && $last >= $col) {
-                $url =~ s/["']$//;
+                $url =~ s/["')]$//;
                 $term->exec_async($term->{browser}, $url);
                 return 1;
             }
@@ -201,9 +201,9 @@ sub on_line_update {
         # we might get called on an already-marked URL.
         my $underlineURLs = $term->x_resource ('underlineURLs') || 'false';
         if($underlineURLs eq 'true') {
-			my ($first, $last) = ($-[1], $+[1] - 1);
+            my ($first, $last) = ($-[1], $+[1] - 1);
 
-			--$last if $url =~ s/["')]$//;
+            --$last if $url =~ s/["')]$//;
 
             for (@{$rend}[$first .. $last]) {
                 $_ |= urxvt::RS_Uline;
@@ -219,11 +219,10 @@ sub on_line_update {
     ()
 }
 
-
 sub on_user_command {
     my ($term, $cmd) = @_;
 
-	activate_mark_mode($term) if $cmd eq 'mark-yank-urls:activate_mark_mode';
+    activate_mark_mode($term) if $cmd eq 'mark-yank-urls:activate_mark_mode';
 
     ()
 }
@@ -258,30 +257,20 @@ sub pick_selection {
 sub on_key_release {
     my ($term, $event, $keysym, $octets) = @_;
 
-
     if ($mark_mode_active) {
         my $keystr = $term->XKeysymToString($keysym);
         my $evt = $keymap{$keystr} || 0;
 
         if ($evt eq 'cancel') {
             deactivate_mark_mode ($term);
-            return 1;
-
         } elsif ($evt eq 'open') {
             pick_selection($term, $url_selected);
-            return 1;
-
         } elsif ($keysym == 65507) {                # <control>
             $mod{control} = 0;
-            return 1;
-
         } elsif ($keysym == 65505) {                # <shift>
             $mod{shift} = 0;
-            return 1;
         } elsif ($keysym == 0xffe9) {                # <alt>
             $mod{alt} = 0;
-            return 1;
-
         } elsif ($mod{control} && ($evt eq 'next' || $evt eq 'prev')) {
             my $dir = ($evt eq 'next') ? -1 : 1;
             move_selection($term, $dir);
@@ -291,8 +280,6 @@ sub on_key_release {
             do_copy ($term, $url);
             recolor_visited($term, $url);
             deactivate_mark_mode ($term);
-            return 1;
-
         } elsif (!$mod{alt}) {
             my $keychar = $keysym2char{$keystr} || $keystr;
             my $i = index($shortcuts, $keychar);
@@ -300,7 +287,6 @@ sub on_key_release {
                 pick_selection($term, $i);
             }
         }
-
         return 1;
     }
 
@@ -329,7 +315,6 @@ sub activate_mark_mode {
 
     if ($mark_mode_active) {
         move_selection($term, 1);
-
     } elsif (setup_overlay($term)) {
         $overlay->show();
         $url_selected = 0;

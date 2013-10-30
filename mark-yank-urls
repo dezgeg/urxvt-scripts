@@ -10,8 +10,8 @@ use DBI;
 use Data::Dumper;
 
 my $url_matcher = qr{(
-        (?:https?://|ftp://|news://|mailto:|file://|www\.)[ab-zA-Z0-9\-\@;\/?:&=%\$_.+!*\x27(),~#]+
-        [ab-zA-Z0-9\-\@;\/?&=%\$_+!*\x27(~]   # exclude some trailing characters (heuristic)
+        (?:https?://|ftp://|news://|mailto:|file://|www\.)[a-zäöA-ZÄÖ0-9\-\@;\/?:&=%\$_.+!*\x27(),~#]+
+        [a-zäöA-ZÄÖ0-9\-\@;\/?&=%\$_+!*\x27(~]   # exclude some trailing characters (heuristic)
 )}x;
 
 my $shortcuts = 'aeuidhts-;qjkxbmwvz';
@@ -82,7 +82,7 @@ sub setup_overlay {
         my $rend = $term->ROW_r($rowno);
         $overlay->set(0, $rowno, $line, $rend);
 
-        while ($line =~ /($url_matcher)/g) {
+        while ($line =~ /($url_matcher)/og) {
             my ($url, $first, $last) = ($1, $-[1], $+[1] - 1);
             --$last if $url =~ s/["')]$//;
 
@@ -133,14 +133,6 @@ sub on_start {
         import Clipboard;
     }
 
-    eval { require Regexp::Common::URI };
-    if(!$@) {
-        require Regexp::Common;
-        Regexp::Common->import('URI');
-
-        $url_matcher = $Regexp::Common::RE{URI}{HTTP};
-    }
-
     $term->{browser} = $term->x_resource ("urlLauncher") || "x-www-browser";
 
     ()
@@ -159,7 +151,7 @@ sub on_button_release {
         my $line = $term->line ($row);
         my $text = $line->t;
 
-        while ($text =~ /($url_matcher)/g) {
+        while ($text =~ /($url_matcher)/og) {
             my ($url, $first, $last) = ($1, $-[1], $+[1]);
 
             if($first <= $col && $last >= $col) {
@@ -193,7 +185,7 @@ sub on_line_update {
     my $text = $line->t;
 
     # Find and underline URLs.
-    while ($text =~ /($url_matcher)/g) {
+    while ($text =~ /($url_matcher)/og) {
         my $url = $1;
         my $rend = $line->r;
 

@@ -11,7 +11,7 @@ use Data::Dumper;
 
 my $url_matcher = qr{(
         (?:https?://|ftp://|news://|mailto:|file://|www\.)[ab-zA-Z0-9\-\@;\/?:&=%\$_.+!*\x27(),~#]+
-        [ab-zA-Z0-9\-\@;\/?&=%\$_+!*\x27()~]   # exclude some trailing characters (heuristic)
+        [ab-zA-Z0-9\-\@;\/?&=%\$_+!*\x27(~]   # exclude some trailing characters (heuristic)
 )}x;
 
 my $shortcuts = 'aoeuidhtns-;qjkxbmwvz';
@@ -68,7 +68,7 @@ sub setup_overlay {
 
         while ($line =~ /($url_matcher)/g) {
 			my ($url, $first, $last) = ($1, $-[1], $+[1] - 1);
-			--$last if $url =~ s/["']$//;
+			--$last if $url =~ s/["')]$//;
 
             my %tuple = (
 				row => $rowno,
@@ -180,7 +180,7 @@ sub on_line_update {
         if($underlineURLs eq 'true') {
 			my ($first, $last) = ($-[1], $+[1] - 1);
 
-			--$last if $url =~ s/["']$//;
+			--$last if $url =~ s/["')]$//;
 
             for (@{$rend}[$first .. $last]) {
                 $_ |= urxvt::RS_Uline;

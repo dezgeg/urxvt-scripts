@@ -14,7 +14,17 @@ my $url_matcher = qr{(
         [ab-zA-Z0-9\-\@;\/?&=%\$_+!*\x27(~]   # exclude some trailing characters (heuristic)
 )}x;
 
-my $shortcuts = 'aoeuidhtns-;qjkxbmwvz';
+my $shortcuts = 'aeuidhts-;qjkxbmwvz';
+# For keys like '-', the keysym name is 'minus' instead of '-'
+# AFAICT there's no direct way to get the character, so add more entries here if necessary.
+# Use the 'xev' program do discover keysym names.
+my %keysym2char = (
+    'minus'      =>  '-',
+    'backslash'  =>  "\\",
+    'adiaresis'  =>  'ä',
+    'semicolon'  =>  ';',
+);
+
 my %keymap = (
     Escape  => 'cancel',
     Return  => 'open',
@@ -284,7 +294,8 @@ sub on_key_release {
             return 1;
 
         } elsif (!$mod{alt}) {
-            my $i = index($shortcuts, $keystr);
+            my $keychar = $keysym2char{$keystr} || $keystr;
+            my $i = index($shortcuts, $keychar);
             if ($i != -1 && $i <= $#urldb) {
                 pick_selection($term, $i);
             }
